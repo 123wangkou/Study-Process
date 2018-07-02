@@ -1,0 +1,946 @@
+// PointView.cpp : implementation of the CPointView class
+//
+
+#pragma comment(lib,"winmm.lib")
+
+#include "stdafx.h"
+#include "Point.h"
+#include<MMSystem.h>
+#include "PointDoc.h"
+#include "PointView.h"
+#include "gl\gl.h"
+#include "gl\glu.h"
+#include"gl\glut.h"
+#include <GL/glext.h>
+
+
+
+#ifdef _DEBUG
+#define new DEBUG_NEW
+#undef THIS_FILE
+static char THIS_FILE[] = __FILE__;
+#endif
+#include"math.h"
+/////////////////////////////////////////////////////////////////////////////
+// CPointView
+
+IMPLEMENT_DYNCREATE(CPointView, CView)
+
+BEGIN_MESSAGE_MAP(CPointView, CView)
+	//{{AFX_MSG_MAP(CPointView)
+	ON_WM_CREATE()
+	ON_WM_DESTROY()
+	ON_WM_ERASEBKGND()
+	ON_WM_SIZE()
+	ON_WM_TIMER()
+	//}}AFX_MSG_MAP
+	// Standard printing commands
+	ON_COMMAND(ID_FILE_PRINT, CView::OnFilePrint)
+	ON_COMMAND(ID_FILE_PRINT_DIRECT, CView::OnFilePrint)
+	ON_COMMAND(ID_FILE_PRINT_PREVIEW, CView::OnFilePrintPreview)
+	ON_WM_LBUTTONDOWN()
+	ON_WM_KEYDOWN()
+END_MESSAGE_MAP()
+
+
+
+#define MAX_CHAR       128
+#define SPHERE1 1
+#define SPHERE2 2
+#define SPHERE3 3
+#define SPHERE4 4
+#define SPHERE5 5
+#define SPHERE6 6
+#define SPHERE7 7
+#define SPHERE8 8
+#define SPHERE9 9
+#define SPHERE10 10
+
+#define pi               3.141592654
+#define DEG2RAD(angle)    angle*(pi/180)
+/////////////////////////////////////////////////////////////////////////////
+// CPointView construction/destruction
+/** 再定义一个默认的光源 */
+static float diffuseLight[] = { 0.8f, 0.8f, 0.8f, 1.0f };	 
+static float specularLight[] = { 1.0f, 1.0f, 1.0f, 1.0f };	 
+static float lightPosition[] = { 0.0f, 0.0f, 5.0f, 1.0f };
+
+/** 定义红色个光源的位置 */
+static float lightPositionR[] = { 0.0f, 0.0f, 5.0f, 1.0f };
+
+/** 定义红色光源的漫射光 */
+static float diffuseLightR[] = { 1.0f, 0.0f, 0.0f, 1.0f };
+
+
+/** 定义红色光源的镜面光 */
+static float specularLightR[] = { 1.0f, 0.0f, 0.0f, 1.0f };
+
+
+
+void CalculateNormal(GLdouble *dVertex1, 
+			GLdouble *dVertex2, GLdouble *dVertex3, 
+			GLdouble *dNormal)
+{
+	GLdouble dVector1[3],dVector2[3];
+	dVector1[0]=dVertex2[0]-dVertex1[0];
+	dVector1[1]=dVertex2[1]-dVertex1[1];
+	dVector1[2]=dVertex2[2]-dVertex1[2];
+	dVector2[0]=dVertex3[0]-dVertex1[0];
+	dVector2[1]=dVertex3[1]-dVertex1[1];
+	dVector2[2]=dVertex3[2]-dVertex1[2];
+
+	dNormal[0]=dVector1[1]*dVector2[2]-dVector1[2]*dVector2[1];
+	dNormal[1]=dVector1[2]*dVector2[0]-dVector1[0]*dVector2[2];
+	dNormal[2]=dVector1[0]*dVector2[1]-dVector1[1]*dVector2[0];
+
+	double dNormalLength=sqrt(dNormal[0]*dNormal[0]
+			+dNormal[1]*dNormal[1]+dNormal[2]*dNormal[2]);
+	if(dNormalLength!=0.0)
+	{
+		dNormal[0]=dNormal[0]/dNormalLength;
+		dNormal[1]=dNormal[1]/dNormalLength;
+		dNormal[2]=dNormal[2]/dNormalLength;
+	}
+	else
+	{
+		dNormal[0]=0.0;
+		dNormal[1]=0.0;
+		dNormal[2]=1.0;
+	}
+
+}
+
+
+
+
+CPointView::CPointView()
+{
+	// TODO: add construction code here
+    m_pDC=NULL;
+	m_Angle=0;
+	angle2 = 30;
+	x = 0;
+	jili = 60;
+	show = 0;
+	solar = 0;
+}
+
+CPointView::~CPointView()
+{
+}
+
+BOOL CPointView::PreCreateWindow(CREATESTRUCT& cs)
+{
+	// TODO: Modify the Window class or styles here by modifying
+	//  the CREATESTRUCT cs
+    cs.style |= WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
+
+	return CView::PreCreateWindow(cs);
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// CPointView drawing
+
+void CPointView::OnDraw(CDC* pDC)
+{
+	CPointDoc* pDoc = GetDocument();
+	ASSERT_VALID(pDoc);
+	// TODO: add draw code for native data here
+	DrawScene();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// CPointView printing
+
+BOOL CPointView::OnPreparePrinting(CPrintInfo* pInfo)
+{
+	// default preparation
+	return DoPreparePrinting(pInfo);
+}
+
+void CPointView::OnBeginPrinting(CDC* /*pDC*/, CPrintInfo* /*pInfo*/)
+{
+	// TODO: add extra initialization before printing
+}
+
+void CPointView::OnEndPrinting(CDC* /*pDC*/, CPrintInfo* /*pInfo*/)
+{
+	// TODO: add cleanup after printing
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// CPointView diagnostics
+
+#ifdef _DEBUG
+void CPointView::AssertValid() const
+{
+	CView::AssertValid();
+}
+
+void CPointView::Dump(CDumpContext& dc) const
+{
+	CView::Dump(dc);
+}
+
+CPointDoc* CPointView::GetDocument() // non-debug version is inline
+{
+	ASSERT(m_pDocument->IsKindOf(RUNTIME_CLASS(CPointDoc)));
+	return (CPointDoc*)m_pDocument;
+}
+#endif //_DEBUG
+
+/////////////////////////////////////////////////////////////////////////////
+// CPointView message handlers
+BOOL CPointView::bSetupPixelFormat()
+{
+	static PIXELFORMATDESCRIPTOR pfd =
+	{
+		sizeof(PIXELFORMATDESCRIPTOR),
+	     1,
+	     PFD_DRAW_TO_WINDOW |
+		 PFD_SUPPORT_OPENGL|
+		 PFD_DOUBLEBUFFER,
+	     PFD_TYPE_RGBA,
+		 24,
+		 0, 0, 0, 0, 0, 0, 
+		 0, 
+		 0,
+		 0, 
+		 0, 0, 0, 0,
+		 32,
+		 0,
+		 0,
+		 PFD_MAIN_PLANE,
+		 0,
+		 0, 0, 0
+	};
+	int pixelformat;
+
+	if((pixelformat = ChoosePixelFormat(m_pDC->GetSafeHdc(), &pfd)) == 0)
+	 {
+		 MessageBox("ChoosePixelFormat failed");
+		 return FALSE;
+	 }
+	if(SetPixelFormat(m_pDC->GetSafeHdc(), pixelformat, &pfd) == FALSE)
+	{
+		MessageBox("SetPixelFormat failed");
+		return FALSE;
+	 }
+    return TRUE;
+}
+void CPointView::Init()
+{
+	
+	PIXELFORMATDESCRIPTOR pfd;
+	int n;
+	HGLRC hrc;
+    m_pDC=new CClientDC(this);
+    if(!bSetupPixelFormat())
+		return;
+	hrc=wglCreateContext(m_pDC->GetSafeHdc());
+	wglMakeCurrent(m_pDC->GetSafeHdc(),hrc);
+
+	/** 设置0号光源 */
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuseLight);
+	glLightfv(GL_LIGHT0, GL_SPECULAR, specularLight);
+	glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
+
+	
+
+	/** 设置1号红色光源 */
+	glLightfv(GL_LIGHT1, GL_DIFFUSE, diffuseLightR);
+	glLightfv(GL_LIGHT1, GL_SPECULAR, specularLightR);
+	glLightfv(GL_LIGHT1, GL_POSITION, lightPositionR);
+
+	
+
+    glEnable(GL_LIGHTING);
+	glEnable(GL_LIGHT0); /**< 启用0号灰色光源,让物体可见 */
+
+	glEnable(GL_LIGHT1); 
+	
+	
+
+
+
+	 /**< 启用纹理映射 */
+	if(!Texture[0].LoadBitmap("tex//sun.bmp"))              /**< 载入位图文件 */
+	{
+		MessageBox("装载位图文件失败！","错误",MB_OK);  /**< 如果载入失败则弹出对话框 */
+		return ;
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+
+	 /**< 启用纹理映射 */
+	if(!Texture[1].LoadBitmap("tex//blue.bmp"))              /**< 载入位图文件 */
+	{
+		//MessageBox("装载位图文件失败！","错误",MB_OK);  /**< 如果载入失败则弹出对话框 */
+		return ;
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT,2);
+
+	if(!Texture[2].LoadBitmap("tex//mars.bmp"))              /**< 载入位图文件 火*/
+	{
+		MessageBox("装载位图文件失败！","错误",MB_OK);  /**< 如果载入失败则弹出对话框 */
+		return ;
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT,3);
+
+	if(!Texture[3].LoadBitmap("tex//venus.bmp"))              /**< 载入位图文件 金星 */
+	{
+		MessageBox("装载位图文件失败！","错误",MB_OK);  /**< 如果载入失败则弹出对话框 */
+		return ;
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT,4);
+
+	if(!Texture[4].LoadBitmap("tex//moon.bmp"))              /**< 载入位图文件 */
+	{
+		MessageBox("装载位图文件失败！","错误",MB_OK);  /**< 如果载入失败则弹出对话框 */
+		return ;
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT,5);
+
+	if(!Texture[5].LoadBitmap("tex//jupiter.bmp"))              /**< 载入位图文件 木星 */
+	{
+		MessageBox("装载位图文件失败！","错误",MB_OK);  /**< 如果载入失败则弹出对话框 */
+		return ;
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT,6);
+
+	if(!Texture[6].LoadBitmap("tex//mercury.bmp"))              /**< 载入位图文件 水星 */
+	{
+		MessageBox("装载位图文件失败！","错误",MB_OK);  /**< 如果载入失败则弹出对话框 */
+		return ;
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT,7);
+
+	if(!Texture[7].LoadBitmap("tex//Saturn.bmp"))              /**< 载入位图文件 木星 */
+	{
+		MessageBox("装载位图文件失败！","错误",MB_OK);  /**< 如果载入失败则弹出对话框 */
+		return ;
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT,8);
+
+	if(!Texture[8].LoadBitmap("tex//Uranus.bmp"))              /**< 载入位图文件 木星 */
+	{
+		MessageBox("装载位图文件失败！","错误",MB_OK);  /**< 如果载入失败则弹出对话框 */
+		return ;
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT,9);
+
+	if(!Texture[9].LoadBitmap("tex//neptune.bmp"))              /**< 载入位图文件 海王星 */
+	{
+		MessageBox("装载位图文件失败！","错误",MB_OK);  /**< 如果载入失败则弹出对话框 */
+		return ;
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT,10);
+
+	if(!Texture[10].LoadBitmap("tex//bk.bmp"))              /**< 载入位图文件 背景 */
+	{
+		MessageBox("装载位图文件失败！","错误",MB_OK);  /**< 如果载入失败则弹出对话框 */
+		return ;
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT,11);
+
+	if(!Texture[11].LoadBitmap("tex//fh.bmp"))              /**< 载入位图文件 背景 */
+	{
+		MessageBox("装载位图文件失败！","错误",MB_OK);  /**< 如果载入失败则弹出对话框 */
+		return ;
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT,12);
+
+	if(!Texture[12].LoadBitmap("tex//solar.bmp"))              /**< 载入位图文件 背景 */
+	{
+		MessageBox("装载位图文件失败！","错误",MB_OK);  /**< 如果载入失败则弹出对话框 */
+		return ;
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT,13);
+
+//定义二维纹理
+    glTexImage2D(GL_TEXTURE_2D,0,3,Texture[0].imageWidth, Texture[0].imageHeight,0,GL_RGB,GL_UNSIGNED_BYTE,
+                 Texture[0].image);
+
+//控制滤波
+    glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP);
+    glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP);
+    glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+
+//说明映射方式
+    glTexEnvf(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_DECAL);
+
+    glEnable(GL_TEXTURE_2D); 
+
+		/** 设置摄像机 */
+	m_Camera.setCamera(0.0f,1.5f, 6.0f, 0.0f, 1.5f, 0.0f,0.0f, 1.0f, 0.0f);
+
+	
+
+}
+void CPointView::DrawScene(void)
+{
+	//设置清屏颜色为黑色
+	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    //清除颜色缓冲区和深度缓冲区
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+   /** 用户自定义的绘制过程 */
+
+	glMatrixMode(GL_MODELVIEW);
+
+	glLoadIdentity();	
+	/** 放置摄像机 */	
+	m_Camera.setLook();
+	
+	glTranslatef(0.0f, 0.0f, -10.0f); /**< 移入屏幕 */
+
+	
+
+	glEnable(GL_DEPTH_TEST);
+	glLoadIdentity();
+
+	//glTranslatef(0, 0, -jili);
+	glEnable(GL_COLOR_MATERIAL);
+	glColor3f(1.0, 0, 0);
+	//glRotatef(angle2, 1, 0, 0);
+
+	glInitNames();
+	glPushName(0);
+    
+	if(show == 1){
+	glLoadName(10);
+		 glPushMatrix();
+		 glRotatef(90,1,0,0);
+	    
+		glTexImage2D(GL_TEXTURE_2D,0,3,Texture[10].imageWidth,
+Texture[10].imageHeight,0,GL_RGB,GL_UNSIGNED_BYTE,
+Texture[10].image);
+		 glBegin(GL_QUADS);
+		glTexCoord2f(0,0);     glVertex3f(-90,-95,-60);
+		glTexCoord2f(0,1);     glVertex3f(-90,-95,60);
+		glTexCoord2f(1,1);     glVertex3f(90,-95,60);
+		glTexCoord2f(1,0);     glVertex3f(90,-95,-60);
+		glEnd();
+    glPopMatrix();
+	}
+
+	glLoadName(11);
+		 glPushMatrix();
+		 glRotatef(90,1,0,0);
+	    glTexImage2D(GL_TEXTURE_2D,0,3,Texture[11].imageWidth,
+Texture[11].imageHeight,0,GL_RGB,GL_UNSIGNED_BYTE,
+Texture[11].image);
+		 glBegin(GL_QUADS);
+		glTexCoord2f(0,0);     glVertex3f(65,-95,-37);
+		glTexCoord2f(0,1);     glVertex3f(65,-95,-30);
+		glTexCoord2f(1,1);     glVertex3f(75,-95,-30);
+		glTexCoord2f(1,0);     glVertex3f(75,-95,-37);
+		glEnd();
+    glPopMatrix();
+
+	if(solar == 1)
+	{
+	    glPushMatrix();
+		 glRotatef(90,1,0,0);
+	    glTexImage2D(GL_TEXTURE_2D,0,3,Texture[12].imageWidth,
+Texture[12].imageHeight,0,GL_RGB,GL_UNSIGNED_BYTE,
+Texture[12].image);
+		 glBegin(GL_QUADS);
+		glTexCoord2f(0,0);     glVertex3f(-70,-95,-38);
+		glTexCoord2f(0,1);     glVertex3f(-70,-95,-15);
+		glTexCoord2f(1,1);     glVertex3f(-40,-95,-15);
+		glTexCoord2f(1,0);     glVertex3f(-40,-95,-38);
+		glEnd();
+        glPopMatrix();
+	}
+	
+
+	 glTranslatef(0,0,-jili);
+	glRotatef(angle2,1,0,0);
+
+
+	glLoadName(1);
+	
+	glPushMatrix();
+	glRotatef(m_Angle/7, 0, 1, 0);
+	
+	//纹理变换
+	glTexImage2D(GL_TEXTURE_2D, 0, 3, Texture[0].imageWidth, Texture[0].imageHeight, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                 Texture[0].image);
+	Drawboll(7.0, 0.0, 0.0, 0.0);  //画球
+
+	DrawOrbit(9.2);
+	DrawOrbit(12);
+	DrawOrbit(20);
+	DrawOrbit(25);
+	DrawOrbit(30);
+	DrawOrbit(35);
+	DrawOrbit(40);
+	DrawOrbit(45);
+	glPopMatrix();
+
+	
+	//glDisable(GL_LIGHTING);
+//	glEnable(GL_BLEND);	               /**< 打开混合 */ 
+//	glBlendFunc(GL_SRC_ALPHA,GL_ONE);	   /**< 基于源象素alpha通道值的半透明混合函数 */
+//	  glDisable(GL_DEPTH_TEST);  /**< 关闭深度测试 */
+//
+//	  glPushMatrix();
+//	  glTranslatef(0.0f, 0.0f, 0.0f);
+//	  glRotatef(m_Angle,0,1,0);
+//	       
+//	  glColor4f(1.0f,1.0f,1.0f,0.5f);	   /**< 全亮度， 50% Alpha 混合 */
+//	
+//	 //纹理变换
+//	  glTexImage2D(GL_TEXTURE_2D,0,3,Texture[0].imageWidth,
+//Texture[0].imageHeight,0,GL_RGB,GL_UNSIGNED_BYTE,
+//Texture[0].image);
+//
+//	 
+//
+//      Drawboll(7.0,0.0,0.0,0.0);	//画球//////////////////////////////
+//	 
+//	 glPopMatrix();
+//	 glEnable(GL_DEPTH_TEST);             /**< 启用深度测试 */
+//	  glDisable(GL_BLEND);		           /**< 关闭混合 */
+	
+	glLoadName(2);
+	
+	glPushMatrix();
+	glRotatef(m_Angle/4, 0, 1, 0);
+	glTranslatef(9, 0, 0);
+	glTexImage2D(GL_TEXTURE_2D, 0, 3, Texture[6].imageWidth, Texture[6].imageHeight, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                Texture[6].image);
+	  
+	Drawboll(0.93, -1/5, 1.0, 0.0);	//水星
+	   
+	glPopMatrix();
+
+   
+
+    glLoadName(3);
+	glPushMatrix();
+	glRotatef(m_Angle/2, 0, 1, 0);
+	glTranslatef(12, 0, 0);
+	glTexImage2D(GL_TEXTURE_2D, 0, 3, Texture[3].imageWidth, Texture[3].imageHeight, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                 Texture[3].image);
+	Drawboll(1.4, -1/5, 1.0, 0.0);	//金星
+	glPopMatrix();
+
+
+	glLoadName(4);
+	glPushMatrix();
+	glRotatef(m_Angle/5, 0, 1, 0);
+	glTranslatef(0, 0, -20);
+	glTexImage2D(GL_TEXTURE_2D, 0, 3, Texture[1].imageWidth, Texture[1].imageHeight, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                 Texture[1].image);
+	Drawboll(1.28, 1.0, 1.0, 0);	//地球
+	   
+	DrawOrbit(1.6);
+
+
+	glPushMatrix();
+	glRotatef(m_Angle/3, 0, 1, 0);
+	glTranslatef(1.5, 0, 0);
+	glTexImage2D(GL_TEXTURE_2D, 0, 3, Texture[4].imageWidth, Texture[4].imageHeight, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                 Texture[4].image);
+	Drawboll(0.23, -1/5, 1.0, 0.0);	//月球
+	glPopMatrix();
+
+
+		
+	   
+
+
+     glLoadName(5);
+	 glPushMatrix();
+	 glRotatef(m_Angle*3/4, 0, 1, 0);
+	 glTranslatef(25, 0, 0);
+	 glTexImage2D(GL_TEXTURE_2D, 0, 3, Texture[2].imageWidth, Texture[2].imageHeight, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                  Texture[2].image);
+	 Drawboll(1.16, -1/5, 1.0, 0.0);	//火星
+	 glPopMatrix();
+
+		
+     glLoadName(6);
+	 glPushMatrix();
+	 glRotatef(m_Angle/4, 0, 1, 0);
+	 glTranslatef(30, 0, 0);
+	 glTexImage2D(GL_TEXTURE_2D, 0, 3, Texture[5].imageWidth, Texture[5].imageHeight, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                  Texture[5].image);
+	 
+	 Drawboll(2.8, -1/5, 1.0, 0.0);	//木星
+
+	 
+	 //glFrontFace(GL_CW);
+     //glDisable( GL_CULL_FACE);
+	 
+	 glDisable(GL_TEXTURE_2D);
+     glEnable(GL_LINE_SMOOTH);
+     glEnable(GL_BLEND);
+     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+     glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+     glBegin(GL_LINE_LOOP);
+     glColor3f(2.0f,2.0f,2.0f);
+	 
+     for(R=3.3;R<=4.5;R+=0.01)
+         for(angle=0;angle<=360;angle++)
+             glVertex3f(R*sin(DEG2RAD(angle)),0,R*cos(DEG2RAD(angle)));		
+     glEnd();
+     glEnable(GL_TEXTURE_2D);
+	 
+
+	 glPopMatrix();
+
+
+     glLoadName(7);
+     glPushMatrix();
+	 glRotatef(m_Angle*5/4, 0, 1, 0);
+	 glTranslatef(35, 0, 0);
+	 glTexImage2D(GL_TEXTURE_2D, 0, 3, Texture[7].imageWidth, Texture[7].imageHeight, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                  Texture[7].image);
+	 Drawboll(2.33, -1/5, 1.0, 0.0);//土星
+
+	 
+
+	 glPopMatrix();
+        
+	 
+
+
+	 glLoadName(8);
+	 glPushMatrix();   
+	 glRotatef(m_Angle*2/4, 0, 1, 0);
+	 glTranslatef(40, 0, 0); 
+	 glTexImage2D(GL_TEXTURE_2D, 0, 3,Texture[8].imageWidth, Texture[8].imageHeight, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                  Texture[8].image);
+     Drawboll(2.1, -1/5, 1.0, 0.0);
+	 glPopMatrix();
+
+
+
+     glLoadName(9);
+	 glPushMatrix();
+	 glRotatef(m_Angle, 0, 1, 0);
+	 glTranslatef(45, 0, 0);
+	 glTexImage2D(GL_TEXTURE_2D, 0, 3, Texture[9].imageWidth, Texture[9].imageHeight, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                  Texture[9].image);
+	 Drawboll(2.1, -1/5, 1.0, 0.0);	//海王星
+	 glPopMatrix();
+
+	 
+     glFlush();							
+	 SwapBuffers(wglGetCurrentDC());
+}
+
+int CPointView::OnCreate(LPCREATESTRUCT lpCreateStruct) 
+{
+	if (CView::OnCreate(lpCreateStruct) == -1)
+		return -1;
+	
+	// TODO: Add your specialized creation code here
+	Init();
+
+	SetTimer(1,10,NULL);
+	return 0;
+}
+
+void CPointView::OnDestroy() 
+{
+	CView::OnDestroy();
+	
+	// TODO: Add your message handler code here
+	HGLRC hrc;
+	hrc = ::wglGetCurrentContext();
+	::wglMakeCurrent(NULL,NULL);
+	if(hrc)
+		::wglDeleteContext(hrc);
+	if(m_pDC)
+		delete m_pDC;
+
+
+	KillTimer(1);
+
+}
+
+BOOL CPointView::OnEraseBkgnd(CDC* pDC) 
+{
+	// TODO: Add your message handler code here and/or call default
+	
+	return true;
+}
+
+//void CPointView::OnSize(UINT nType, int cx, int cy) 
+//{
+//	CView::OnSize(nType, cx, cy);
+//	
+//	// TODO: Add your message handler code here
+//		int w=cx;int h=cy;
+//		glViewport(0,0,w,h); //设置视口与窗口匹配
+//		glMatrixMode(GL_PROJECTION); //重新设置坐标系统
+//		glLoadIdentity();
+//	
+//		gluPerspective(45.0f, (GLfloat)w / (GLfloat)h, 1.0f, 100.0f);	
+//		glMatrixMode(GL_MODELVIEW);
+//		glLoadIdentity();
+//}
+void CPointView::OnSize(UINT nType, int cx, int cy) 
+{
+	CView::OnSize(nType, cx, cy);
+	
+	// TODO: Add your message handler code here
+    w=cx; h=cy;
+    glViewport(0, 0, w, h); //设置视口与窗口匹配
+    glMatrixMode(GL_PROJECTION); //重新设置坐标系统
+	glLoadIdentity();
+	
+	gluPerspective(45.0f, (GLfloat)w / (GLfloat)h, 1.0f, 100.0f);	
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+}
+
+
+void CPointView::OnTimer(UINT nIDEvent) 
+{
+	// TODO: Add your message handler code here and/or call default
+
+	/*if(m_Angle==360)
+		m_Angle=0;*/
+
+	   x += 0.05;
+       m_Angle += 3;
+
+	   if(x > 7)
+		   x = 0;
+
+	   
+
+	Invalidate();
+	CView::OnTimer(nIDEvent);
+}
+
+
+void CPointView::norm(float v1[], float v2[], float v3[], float* nor)
+{
+	GLfloat vc1[3],vc2[3];
+	GLfloat a,b,c;
+	GLdouble r;
+	vc1[0]= v2[0] - v1[0]; 
+	vc1[1]= v2[1] - v1[1]; 
+	vc1[2]= v2[2] - v1[2];
+	vc2[0]= v3[0] - v1[0]; 
+	vc2[1]= v3[1] - v1[1]; 
+	vc2[2]= v3[2] - v1[2];
+	a = vc1[1] * vc2[2] - vc2[1] * vc1[2];
+	b = vc2[0] * vc1[2] - vc1[0] * vc2[2];
+	c = vc1[0] * vc2[1] - vc2[0] * vc1[1];
+	r = sqrt( a * a + b* b + c * c);
+	nor[0] = a / r;nor[1] = b / r;nor[2] = c / r;
+
+}
+
+void CPointView::Drawboll(float bb,float i1,float i2,float i3)
+{
+	float bj = bb;
+	float PI = 3.1415;
+
+	/*glInitNames();
+	glPushName(0);
+	glLoadName(2);*/
+
+	glPushMatrix();
+
+	float a = PI/12;
+	float b = 2*PI/24;
+	double dPoint1[3],dPoint2[3],dPoint3[3];
+	double dNormal[3];
+
+	
+	glRotatef(m_Angle*i1, 1, 0, 0);
+	glRotatef(m_Angle*i2, 0, 1, 0);
+	glRotatef(m_Angle*i3, 0, 0, 1);
+	for(float i=0;i<PI;i+=a)
+	{
+		for(float j=0;j<=2*PI;j+=b)
+		{
+			dPoint1[0]=bj*sin(i)*cos(j);	 dPoint1[1]=bj*sin(i)*sin(j);  dPoint1[2]=bj*cos(i);
+	        dPoint2[0]=bj*sin(i+a)*cos(j);	 dPoint2[1]=bj*sin(i+a)*sin(j); dPoint2[2]=bj*cos(i+a);
+	        dPoint3[0]=bj*sin(i+a)*cos(j+b);	 dPoint3[1]=bj*sin(i+a)*sin(j+b); dPoint3[2]=bj*cos(i+a);
+	        CalculateNormal(dPoint1, dPoint2, dPoint3, dNormal);
+			glBegin(GL_QUADS);
+			//glColorMaterial();
+			glNormal3dv(dNormal);
+			glColor3f(1.f, 0.65f, 1.f);
+			
+			glTexCoord2f(    j/PI/2,    i/PI);     glVertex3f(bj*sin(i)*cos(j),bj*sin(i)*sin(j),bj*cos(i));
+			glTexCoord2f(    j/PI/2,(i+a)/PI);     glVertex3f(bj*sin(i+a)*cos(j),bj*sin(i+a)*sin(j),bj*cos(i+a));
+			glTexCoord2f((j+b)/PI/2,(i+a)/PI);     glVertex3f(bj*sin(i+a)*cos(j+b),bj*sin(i+a)*sin(j+b),bj*cos(i+a));
+			glTexCoord2f((j+b)/PI/2,    i/PI);     glVertex3f(bj*sin(i)*cos(j+b),bj*sin(i)*sin(j+b),bj*cos(i));
+			glEnd();
+			
+		}
+		
+	}
+	glPopMatrix();
+
+}
+
+
+
+
+
+
+void CPointView::OnLButtonDown(UINT nFlags, CPoint point)
+{
+	// TODO: 在此添加消息处理程序代码和/或调用默认值
+	
+	
+
+	GLuint select[98];
+	GLint viewport[4];
+	GLint clicktest;
+	int objsel;
+	glSelectBuffer(98, select);
+	glGetIntegerv(GL_VIEWPORT, viewport);
+
+	glMatrixMode(GL_PROJECTION);
+	glPushMatrix();
+	glRenderMode(GL_SELECT);
+	glLoadIdentity();
+	gluPickMatrix(point.x, viewport[3]-point.y, 2, 2, viewport);
+
+	gluPerspective(45.0f, (GLfloat)w / (GLfloat)h, 1.0f, 100.0f);	
+	DrawScene();
+	
+
+
+	clicktest=glRenderMode(GL_RENDER);
+	if(clicktest==1)
+	{	
+		objsel=select[3];
+		switch(objsel)
+		{
+		case 1:		
+			sndPlaySound("sun.wav", SND_ASYNC);	
+			solar = 1;
+			break;
+		case 2:
+			sndPlaySound("mercury.wav", SND_ASYNC);
+			break;
+		case 3:
+			sndPlaySound("venus.wav", SND_ASYNC);
+			break;
+		case 4:
+			sndPlaySound("earth.wav", SND_ASYNC);
+			break;
+		case 5:
+			sndPlaySound("mars.wav", SND_ASYNC);
+			break;
+		case 6:
+			sndPlaySound("jupiter.wav", SND_ASYNC);
+			break;
+		case 7:
+			sndPlaySound("saturn.wav", SND_ASYNC);
+			break;
+		case 8:
+			sndPlaySound("uranus.wav", SND_ASYNC);
+			break;
+		case 9:
+			sndPlaySound("neptune.wav", SND_ASYNC);
+			break;
+		case 10:
+			show = 0;
+			break;
+		case 11:
+			show = 1;
+			break;
+		
+		default:
+			break;
+		}
+
+	}
+	glMatrixMode(GL_PROJECTION);
+	glPopMatrix();
+	glMatrixMode(GL_MODELVIEW);
+	
+
+    Invalidate();
+	CView::OnLButtonDown(nFlags, point);
+}
+
+
+
+
+void CPointView::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
+{
+	// TODO: 在此添加消息处理程序代码和/或调用默认值
+
+	if(nChar==VK_SHIFT)
+	{
+		m_Camera.setSpeed(0.6f);
+	}
+	
+
+	if(nChar==VK_UP)   //< 向上方向键
+	{
+		angle2+=5;
+		m_Camera.moveCamera(m_Camera.getSpeed());          /**< 移动摄像机 */
+	}
+
+	if(nChar==VK_DOWN) // 向下方向键
+	{
+		angle2-=5;
+		m_Camera.moveCamera(-m_Camera.getSpeed());         /**< 移动摄像机 */
+	}
+
+	if(nChar==VK_LEFT) //
+	{
+		jili+=1;
+		m_Camera.yawCamera(-m_Camera.getSpeed());          /**< 移动摄像机 */
+	}
+
+	if(nChar==VK_RIGHT) //< 向右方向键
+	{
+		jili-=1;
+		m_Camera.yawCamera(m_Camera.getSpeed());            /**< 移动摄像机 */
+	}
+
+	Invalidate();
+	
+
+	CView::OnKeyDown(nChar, nRepCnt, nFlags);
+}
+
+
+void CPointView::DrawOrbit(float Orbit_Radius)
+{
+   glDisable(GL_TEXTURE_2D);
+   glEnable(GL_LINE_SMOOTH);
+   glEnable(GL_BLEND);
+   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+   glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+
+   glBegin(GL_LINE_LOOP);
+   glColor3f(1.0f,1.0f,1.0f);
+   for(angle=0;angle<=360;angle++)
+       glVertex3f(Orbit_Radius*sin(DEG2RAD(angle)),0,Orbit_Radius*cos(DEG2RAD(angle)));		
+   glEnd();
+   glEnable(GL_TEXTURE_2D);
+}
+
+
+void CPointView::Planet_belt(float Orbit_Radius)
+{
+   glDisable(GL_TEXTURE_2D);
+   glEnable(GL_LINE_SMOOTH);
+   glEnable(GL_BLEND);
+   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+   glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+
+   glBegin(GL_LINE_LOOP);
+   glColor3f(1.0f,1.0f,1.0f);
+   for(angle=0;angle<=360;angle++)
+       glVertex3f(Orbit_Radius*sin(DEG2RAD(angle)),0,Orbit_Radius*cos(DEG2RAD(angle)));		
+   glEnd();
+   glEnable(GL_TEXTURE_2D);
+}
